@@ -11,7 +11,7 @@ renderField:function(inFormKey, item, inField, inContainer)
 	(inField.renderif) ? null: inField.renderif="";
 	(inField.caption) ? null: inField.caption="";
 	(inField.dataSource) ? null: inField.dataSource="";
-	(inField.tooltip) ? null: inField.toolTip="";
+	(inField.toolTip) ? null: inField.toolTip="";
 
 
     //attempt to pull data....
@@ -38,6 +38,9 @@ renderField:function(inFormKey, item, inField, inContainer)
                 break;
             case 'dropdown':
                 ijf.extUtils.renderDropdown (inFormKey,item,inField,inContainer);
+                break;
+            case 'dropdownwithpicker':
+                ijf.extUtils.renderDropdownWithPicker (inFormKey,item,inField,inContainer);
                 break;
             case 'radio':
                 ijf.extUtils.renderRadiogroup (inFormKey,item,inField,inContainer);
@@ -71,6 +74,12 @@ renderField:function(inFormKey, item, inField, inContainer)
                 break;
             case 'itemlist':
                 ijf.extUtils.renderItemList (inFormKey,item,inField,inContainer);
+                break;
+            case 'chart-pie':
+                ijf.extUtils.renderPieChart (inFormKey,item,inField,inContainer);
+                break;
+            case 'chart-bar':
+                ijf.extUtils.renderBarChart (inFormKey,item,inField,inContainer);
                 break;
             case 'openpopform':
                 ijf.extUtils.renderPopFormButton(inFormKey,item,inField,inContainer);
@@ -365,6 +374,8 @@ renderPopupForm:function(inFormKey,inItem, inAction)
     });
     dWin.show();
     ijf.main.gPopupFormHandle = dWin;
+    //need to force the render to get metadata for the new thing, null out the meta...
+    ijf.jiraMeta=null;
     ijf.main.renderForm(nfId, inAction.form, true, rItem);
 },
 renderCommentList:function(inFormKey,item, inField, inContainer)
@@ -493,9 +504,15 @@ renderHtml:function(inFormKey,item, inField, inContainer)
     if(!l_panelStyle) l_panelStyle="background:transparent";
     if(!l_Style) l_Style="background:transparent";
 
-
-    var outHtml = ijfUtils.replaceKeyValues(inField.dataSource,item);
-    outHtml = ijfUtils.sanitize(outHtml);
+    if(inField.dataReference=="html")
+    {
+	    var outHtml = ijfUtils.replaceKeyValues(inField.dataSource,item, true);
+	}
+    else
+    {
+	    var outHtml = ijfUtils.replaceKeyValues(inField.dataSource,item);
+	}
+    //outHtml = ijfUtils.sanitize(outHtml);
     if(!l_Style) l_Style = l_panelStyle;
     //rendeIf logic
     var hideField = ijfUtils.renderIfShowField("",inField);
@@ -1011,15 +1028,31 @@ renderTextbox:function(inFormKey,item, inField, inContainer)
 {
 
     inContainer.title = inField.toolTip;
+    var lAllowBlank = true;
+    //adding concept of session vars.
+    if(inField.dataSource=="session")
+    {
+		var data = ijf.session[inFormKey+'_fld_'+inField.formCell];
+	}
+	else
+	{
+		var jfFieldMeta = ijf.jiraMetaKeyed[inField.dataSource];
+	    var jfFieldDef = ijf.jiraFieldsKeyed[inField.dataSource];
+		var jf=item.fields[jfFieldDef.id];
 
-	var jfFieldMeta = ijf.jiraMetaKeyed[inField.dataSource];
-    var jfFieldDef = ijf.jiraFieldsKeyed[inField.dataSource];
-	var jf=item.fields[jfFieldDef.id];
-    var data = ijfUtils.handleJiraFieldType(jfFieldDef,jf);
+		if(inField.dataReference == "html")
+		{
+			var data = ijfUtils.handleJiraFieldType(jfFieldDef,jf,false,true);
+		}
+		else
+		{
+			var data = ijfUtils.handleJiraFieldType(jfFieldDef,jf);
+		}
 
-	    var lAllowBlank = true;
 	    if (jfFieldMeta.hasOwnProperty("required")) lAllowBlank = (jfFieldMeta.required) ? false : true;
-        if (ijfUtils.getNameValueFromStyleString(inField.fieldStyle,'required')=="true") lAllowBlank=false;
+	}
+
+    if (ijfUtils.getNameValueFromStyleString(inField.fieldStyle,'required')=="true") lAllowBlank=false;
 
     var lMaxsize =  Number.MAX_VALUE;
 
@@ -1109,7 +1142,14 @@ renderTextbox:function(inFormKey,item, inField, inContainer)
                     if(!inField.toolTip) inContainer.title = f.getErrors().join();
                 },
                 change: function(f,n,o){
-                    ijf.main.controlChanged(inFormKey+'_fld_'+inField.formCell);
+                    if(inField.dataSource=="session")
+                    {
+						ijf.session[inFormKey+'_fld_'+inField.formCell]=n;
+					}
+					else
+					{
+						ijf.main.controlChanged(inFormKey+'_fld_'+inField.formCell);
+					}
                     if(f.isValid())
                     {
                         ocf(f,n,o);
@@ -1530,18 +1570,16 @@ renderDatebox:function(inFormKey,item, inField, inContainer)
     //after render....
     if(ijf.snippets.hasOwnProperty(inField["afterRender"])) ijf.snippets[inField["afterRender"]](simple, inFormKey,item, inField, inContainer);
 },
-
-
-renderUserPicker:function(inFormKey,item, inField, inContainer)
+ renderDropdownWithPicker:function(inFormKey,item, inField, inContainer)
 {
 
     inContainer.title = inField.toolTip;
 
-	var jfFieldMeta = ijf.jiraMetaKeyed[inField.dataSource];
     var jfFieldDef = ijf.jiraFieldsKeyed[inField.dataSource];
 	var jf=item.fields[jfFieldDef.id];
-
     var data = ijfUtils.handleJiraFieldType(jfFieldDef,jf);
+
+	var jfFieldMeta = ijf.jiraMetaKeyed[inField.dataSource];
 
     var lAllowBlank = true;
     if (jfFieldMeta.hasOwnProperty("required")) lAllowBlank = (jfFieldMeta.required) ? false : true;
@@ -1560,40 +1598,94 @@ renderUserPicker:function(inFormKey,item, inField, inContainer)
             var lookup = fw.getReferenceItemsAsSimpleArray(ref.entity,ref.field,ref.filter);
             break;
         default:
-
-
-            var apiUrl = "/rest/api/2/user/assignable/search";
-            if(inField.controlType="userpicker") apiUrl = "/rest/api/2/user/search";
-
-
-     		Ext.define('JiraUserModel', {
-			        extend: 'Ext.data.Model',
-			        fields: [{name:'name', type: 'string'},
-			                 {name: 'displayName', type: 'string'}]
-    		});
-			var lookup = Ext.create('Ext.data.Store', {
-				storeId: 'userDropdownId',
-				model: 'JiraUserModel',
-				autoLoad: true,
-				proxy: {
-					type: 'ajax',
-					url: g_root + "/rest/api/2/user/assignable/search",
-					extraParams : {
-								issueKey:'TPO-1'},
-					filterParam: 'username',
-					groupParam: '',
-					limitParam: '',
-					pageParam: '',
-					sortParam: '',
-					startParam: '',
-					reader: {
-						type: 'json',
-						root: ''
-					}
-				}
-		    });
+			var lookup = jfFieldMeta.allowedValues.map(function(e)
+			{
+				return [e.id,e.value];
+			});
      		break;
     }
+    var pickListWindow = {};
+	var openPicklistForm = function(inControl)
+	{
+
+       var colSettingsArray = [];
+       var gridFieldArray=[];
+	   var fType = 'list';
+
+	   gridFieldArray.push({name: "value", type: "string"});
+	   colSettingsArray.push({
+				header: "Option Value",
+				width: 'auto',
+				dataIndex: "value",
+				width: "100%",
+				sortable: true,
+				filter: {
+				  type: 'string'
+	            }
+			});
+		if(!Ext.ClassManager.isCreated(inField.dataSource + inField.formCell.replace(",","")))
+		{
+			Ext.define(inField.dataSource + inField.formCell.replace(",",""), {
+				extend: 'Ext.data.Model',
+				fields: gridFieldArray
+			});
+		}
+	 	var store = Ext.create('Ext.data.Store', {
+			model: inField.dataSource + inField.formCell.replace(",",""),
+			proxy: {
+				type: 'memory',
+				reader: {
+					type: 'json'
+				}},
+				autoLoad: false});
+		var fLookup = lookup.map(function(e){
+			return {"id":e[0],"value":e[1]};
+		});
+		store.proxy.data=fLookup;
+		store.load();
+		var pgrid= new Ext.grid.GridPanel({
+			store: store,
+			plugins: 'gridfilters',
+			//style: l_panelStyle,
+			height: 380,
+			width: 580,
+			inControl: inControl,
+			columns: colSettingsArray,
+			selModel: {selType: 'rowmodel', mode: 'SINGLE'},
+			listeners: {
+				'beforeitemdblclick': function(selMod, record, something ){
+					var nVal = record.data.id;
+					pickListWindow.close();
+					this.inControl.items.items[0].setValue(nVal);
+				}
+			}
+		});
+		//need a grid of lookup, ID hidden, rest one column with string search
+		pickListWindow = new Ext.Window({
+            // layout: 'fit',
+            closeAction:'destroy',
+            title:  "Make Selection",
+            width:  600,
+            height: 400,
+            closable: true,
+            items:[pgrid],
+            bodyStyle:'#fff',
+            modal: true,
+            inControl: inControl,
+            layout:'fit',
+            buttons:[{
+                text:"Select",
+                width: 80,
+                handler: function(){
+					    var thisUp = this.up().up();
+						var nVal = thisUp.items.items[0].selection;
+						pickListWindow.close();
+						if(nVal) thisUp.inControl.items.items[0].setValue(nVal.data.id);
+					}}
+            ]
+        });
+        pickListWindow.show();
+	}
 
     var hideField = ijfUtils.renderIfShowField(data,inField);
     var hideLabel = false;
@@ -1646,6 +1738,174 @@ renderUserPicker:function(inFormKey,item, inField, inContainer)
         hidden: hideField,
         border:false,
         bodyStyle: l_Style,
+        layout: 'hbox',
+        items:[{xtype: 'combobox',
+            store: lookup,
+			labelAlign: 'left',
+			labelStyle: l_labelStyle,
+			style: l_panelStyle,
+			fieldStyle: l_fieldStyle,
+			fieldLabel: lCaption,
+			hideLabel: hideLabel,
+			allowBlank: lAllowBlank,
+			readOnly: rOnly,
+			value: data,
+			forceSelection: limitList,
+			triggerAction: 'all',
+			emptyText:'Please select...',
+			selectOnFocus:true,
+			id: inFormKey+'_ctr_'+inField.formCell.replace(",","_"),
+			listeners: {
+				afterrender: function(f)
+				{
+					this.validate();
+				},
+				change: function(f,n,o){
+					ijf.main.controlChanged(inFormKey+'_fld_'+inField.formCell);
+					ocf(f,n,o);
+				}
+			}},
+			{
+			            text: "(List)",
+			            style:  "background:transparent;margin-top:4px;margin-left:4px",
+                        xtype: "simplelink",
+                        handler: function(){
+							openPicklistForm(this.up());
+						}
+			}]
+    });
+    //before render....
+    if(ijf.snippets.hasOwnProperty(inField["beforeRender"])) ijf.snippets[inField["beforeRender"]](simple, inFormKey,item, inField, inContainer);
+
+    simple.render(inContainer);
+    var thisControl = new itemControl(inFormKey+'_fld_'+inField.formCell, inField, item, simple, inContainer);
+    ijf.main.controlSet[thisControl.id]=thisControl;
+    //after render....
+    if(ijf.snippets.hasOwnProperty(inField["afterRender"])) ijf.snippets[inField["afterRender"]](simple, inFormKey,item, inField, inContainer);
+},
+
+renderUserPicker:function(inFormKey,item, inField, inContainer)
+{
+
+    inContainer.title = inField.toolTip;
+
+	var jfFieldMeta = ijf.jiraMetaKeyed[inField.dataSource];
+    var jfFieldDef = ijf.jiraFieldsKeyed[inField.dataSource];
+	var jf=item.fields[jfFieldDef.id];
+
+    var data = ijfUtils.handleJiraFieldType(jfFieldDef,jf);
+
+    var lAllowBlank = true;
+    if (jfFieldMeta.hasOwnProperty("required")) lAllowBlank = (jfFieldMeta.required) ? false : true;
+        if (ijfUtils.getNameValueFromStyleString(inField.fieldStyle,'required')=="true") lAllowBlank=false;
+
+
+    //manage cases for the lookups
+    //case one, simple collect constraint
+    //case two reference lookup
+    switch (inField.dataReference)
+    {
+        case "ijfReference":
+            var ref = JSON.parse(inField.referenceFilter);
+            //value only for now...
+            if((ref.filter) && (ref.filter!="")) ref.filter.value = ijfUtils.replaceKeyValues(ref.filter.value,item);
+            var lookup = fw.getReferenceItemsAsSimpleArray(ref.entity,ref.field,ref.filter);
+            break;
+        default:
+
+			var apiUrl = "/rest/api/2/user/picker";
+			var	fParam = "query";
+			var xtrParam = null;
+			var uRoot = 'users';
+            if(inField.dataSource=="Assignee")
+            {
+	            apiUrl = "/rest/api/2/user/assignable/search";
+	            fParam = "username";
+	            xtrParam={project:inField.form.formSet.projectId};
+	            uRoot = '';
+			}
+
+
+     		Ext.define('JiraUserModel', {
+			        extend: 'Ext.data.Model',
+			        fields: [{name:'name', type: 'string'},
+			                 {name: 'displayName', type: 'string'}]
+    		});
+			var lookup = Ext.create('Ext.data.Store', {
+				storeId: 'userDropdownId',
+				model: 'JiraUserModel',
+				autoLoad: false,
+				proxy: {
+					type: 'ajax',
+					url: g_root + apiUrl,
+					extraParams : xtrParam,
+					filterParam: fParam,
+					groupParam: '',
+					limitParam: '',
+					pageParam: '',
+					sortParam: '',
+					startParam: '',
+					reader: {
+						type: 'json',
+						root: uRoot
+					}
+				}
+		    });
+		    //now you need to load the inital data:
+			if(jf)  lookup.loadData([{"name":jf.key, "displayName":jf.displayName}]);
+     		break;
+    }
+
+    var hideField = ijfUtils.renderIfShowField(data,inField);
+    var hideLabel = false;
+    if (inField.caption=="")
+        var lCaption = inField.dataSource;
+    else if(inField.caption=="none")
+    {
+        var lCaption = "";
+        hideLabel=true;
+    }
+    else
+        var lCaption = inField.caption;
+    if (inField.style.indexOf('hidden:true')>-1)
+    {
+        hideLabel=true;
+        hideField=true;
+    }
+    var rOnly = false;
+    if (inField.fieldStyle.indexOf('readonly:true')>-1)
+    {
+        rOnly=true;
+    }
+    if (inField.style.indexOf('enteronce:true')>-1)
+    {
+        if (!!data) rOnly=true;
+    }
+
+    var limitList = true;
+    if (inField.style.indexOf('limit:false')>-1)
+    {
+        limitList=false;
+    }
+
+    var ocf =  ijfUtils.getEvent(inField);
+
+    var l_labelStyle = inField.labelStyle;
+    var l_panelStyle = inField.panelStyle;
+    var l_Style = inField.style;
+    var l_fieldStyle = inField.fieldStyle;
+
+
+    if(!l_labelStyle) l_labelStyle="background:transparent";
+    if(!l_panelStyle) l_panelStyle="background:transparent";
+    if(!l_Style) l_Style="background:transparent";
+    if(!l_fieldStyle) l_fieldStyle="background:white";
+	if(rOnly) l_fieldStyle="background:lightgray";
+
+    var simple = new Ext.FormPanel({
+        hidden: hideField,
+        border:false,
+        bodyStyle: l_Style,
         items:[{xtype: 'combobox',
             store: lookup,
             displayField: 'displayName',
@@ -1663,7 +1923,7 @@ renderUserPicker:function(inFormKey,item, inField, inContainer)
 			hideTrigger: true,
 			triggerAction: 'all',
 			queryMode: 'remote',
-			queryParam: 'username',
+			queryParam: fParam,
 			minChars: 2,
 			emptyText:'Start typing...',
 			selectOnFocus:true,
@@ -2007,11 +2267,22 @@ renderCheckbox:function(inFormKey,item, inField, inContainer)
 
     inContainer.title = inField.toolTip;
 
-  	var jfFieldMeta = ijf.jiraMetaKeyed[inField.dataSource];
-      var jfFieldDef = ijf.jiraFieldsKeyed[inField.dataSource];
-  	var jf=item.fields[jfFieldDef.id];
+	if(inField.dataSource=="session")
+	{
+		  var jfFieldMeta = {};
+		  jfFieldMeta.allowedValues = JSON.parse(inField.dataReference);
+		  var jfFieldDef = {};
+		  jfFieldDef.id=inField.formCell;
+		  var data = ijf.session[inFormKey+'_fld_'+inField.formCell];
+	}
+	else
+	{
+		  var jfFieldMeta = ijf.jiraMetaKeyed[inField.dataSource];
+		  var jfFieldDef = ijf.jiraFieldsKeyed[inField.dataSource];
+		  var jf=item.fields[jfFieldDef.id];
+		  var data = ijfUtils.handleJiraFieldType(jfFieldDef,jf);
+	}
 
-      var data = ijfUtils.handleJiraFieldType(jfFieldDef,jf);
 
       var lAllowBlank = true;
       if (jfFieldMeta.hasOwnProperty("required")) lAllowBlank = (jfFieldMeta.required) ? false : true;
@@ -2076,7 +2347,7 @@ renderCheckbox:function(inFormKey,item, inField, inContainer)
   			     			name: jfFieldDef.id,
   			     			readOnly: rOnly,
   			     			inputValue: e.id};
-       });
+      });
 
       var ocf =  ijfUtils.getEvent(inField);
       var hideField = ijfUtils.renderIfShowField(data,inField);
@@ -2103,7 +2374,22 @@ renderCheckbox:function(inFormKey,item, inField, inContainer)
   					this.validate();
   				},
   				change: function(f,n,o){
-  					ijf.main.controlChanged(inFormKey+'_fld_'+inField.formCell);
+					if(inField.dataSource=="session")
+					{
+	  					//somehow ijf.session needs the current values of this animal....
+	  					//perhaps: up().items[], create lData and set session to it
+
+	  					var newVals = f.items.items.reduce(function(iVal,e){
+							if(e.value) iVal.push({"id":e.inputValue});
+							return iVal;
+						},[]);
+						ijf.session[inFormKey+'_fld_'+inField.formCell]=newVals;
+
+					}
+					else
+					{
+	  					ijf.main.controlChanged(inFormKey+'_fld_'+inField.formCell);
+					}
   					ocf(f,n,o);
   				}
   			}}]
@@ -2328,7 +2614,15 @@ renderCheckbox:function(inFormKey,item, inField, inContainer)
 	var jfFieldMeta = ijf.jiraMetaKeyed[inField.dataSource];
     var jfFieldDef = ijf.jiraFieldsKeyed[inField.dataSource];
 	var jf=item.fields[jfFieldDef.id];
-    var data = ijfUtils.handleJiraFieldType(jfFieldDef,jf);
+
+	if(inField.dataReference == "html")
+	{
+	    var data = ijfUtils.handleJiraFieldType(jfFieldDef,jf,false,true);
+	}
+	else
+	{
+	    var data = ijfUtils.handleJiraFieldType(jfFieldDef,jf);
+	}
 
 	    var lAllowBlank = true;
 	    if (jfFieldMeta.hasOwnProperty("required")) lAllowBlank = (jfFieldMeta.required) ? false : true;
@@ -2733,9 +3027,10 @@ renderItemList:function(inFormKey,item, inField, inContainer)
     }
     if(inField.referenceFilter)
     {
+
         //filter the peerItems...
-        if(ijf.snippets.hasOwnPropery(inField.referenceFilter))
-	        dataItems = window[iFilters.snippet](dataItems);
+        if(ijf.snippets.hasOwnProperty(inField.referenceFilter))
+	        dataItems = ijf.snippets[inField.referenceFilter](dataItems);
     }
 
 	//calculate column widths...and headers
@@ -2806,8 +3101,26 @@ renderItemList:function(inFormKey,item, inField, inContainer)
 	            }
 			});
 		}
+		else if(f.schema.type=="datetime")
+		{
+			gridFieldArray.push({name: f.id, type: "date"});
+			colSettingsArray.push({
+				header: f.header,
+				dataIndex: f.id,
+				xtype: 'datecolumn',
+				sortable: true,
+				width: f.width,
+				style: l_labelStyle,
+				format: 'm/d/y',
+				filter: {
+				  type: 'date'
+	            }
+			});
+		}
 		else
 		{
+			var fType = 'list';
+			if(f.id=="summary") fType='string';
 			gridFieldArray.push({name: f.id, type: "string"});
 			colSettingsArray.push({
 				header: f.header,
@@ -2817,7 +3130,7 @@ renderItemList:function(inFormKey,item, inField, inContainer)
 				style: l_labelStyle,
 				sortable: true,
 				filter: {
-				  type: 'string'
+				  type: fType
 	            }
 			});
         }
@@ -3022,6 +3335,337 @@ renderItemList:function(inFormKey,item, inField, inContainer)
     ijf.main.controlSet[thisControl.id]=thisControl;
     //after render....
     if(ijf.snippets.hasOwnProperty(inField["afterRender"])) ijf.snippets[inField["afterRender"]](layout, inFormKey,item, inField, inContainer);
+},
+
+//charting
+renderPieChart :function(inFormKey,item, inField, inContainer)
+{
+
+    inContainer.title = inField.toolTip;
+
+    var curIndex = 0;
+
+    var lCaption = inField.caption;
+
+    var rOnly = false;
+    if (inField.fieldStyle.indexOf('readonly:true')>-1)
+    {
+        rOnly=true;
+    }
+
+    var hideField = ijfUtils.renderIfShowField("",inField);
+
+    var collapsible = true;
+    if (inField.style.indexOf('collapsible:false')>-1)
+    {
+        collapsible=false;
+    }
+    var collapsed = false;
+    if (inField.style.indexOf('collapsed:true')>-1)
+    {
+        collapsed=true;
+    }
+
+
+	    var l_labelStyle = inField.labelStyle;
+	    var l_panelStyle = inField.panelStyle;
+	    var l_Style = inField.style;
+	    var l_fieldStyle = inField.fieldStyle;
+
+
+	    if(!l_labelStyle) l_labelStyle="background:transparent";
+	    if(!l_panelStyle) l_panelStyle="background:transparent";
+	    if(!l_Style) l_Style="background:transparent";
+	    if(!l_fieldStyle) l_fieldStyle="background:transparent";
+
+	var l_Height = 'auto';
+    var l_Height=ijfUtils.getNameValueFromStyleString(l_panelStyle,"height");
+    if(l_Height=="")
+    {
+		l_Height='auto';
+	}
+	else
+	{
+    	l_Height = l_Height.replace("px","")/1;
+	}
+
+
+    var store = Ext.create('Ext.data.Store', {
+		fields: ['wedge', 'data1' ],
+		data: [
+			{ wedge: 'Android', data1: 68.3 },
+			{ wedge: 'BlackBerry', data1: 1.7 },
+			{ wedge: 'iOS', data1: 17.9 },
+			{ wedge: 'Windows Phone', data1: 10.2 },
+			{ wedge: 'Others', data1: 1.9 }
+		]
+	});
+
+    var layout = new Ext.Panel({
+        title: lCaption,
+        collapsible: false,
+        collapsed: false,
+        hidden: hideField,
+        width: "100%",
+        controller:  Ext.create('Ext.app.ViewController', {
+		    onDataRender: function (v) {
+		        return v + '%';
+		    },
+		    onSeriesTooltipRender: function (tooltip, record, item) {
+		        tooltip.setHtml(record.get('wedge') + ': ' + record.get('data1') + '%');
+		    }
+		}),
+        layoutConfig: {
+            columns: 1
+        },
+        style: l_Style,
+        items: [Ext.create('Ext.chart.PolarChart',{
+			        theme: 'default-gradients',
+			        width: '100%',
+			        height: 500,
+			        insetPadding: 50,
+			        innerPadding: 20,
+			        store: store,
+			        legend: {
+			            docked: 'bottom'
+			        },
+			        interactions: ['rotate'],
+			        sprites: [{
+			            type: 'text',
+			            text: 'Title of my Pie Chart',
+			            fontSize: 22,
+			            width: 100,
+			            height: 30,
+			            x: 40, // the sprite x position
+			            y: 20  // the sprite y position
+			        }, {
+			            type: 'text',
+			            text: 'Use beforeRender to alter data',
+			            x: 12,
+			            y: 375
+			        }, {
+			            type: 'text',
+			            text: 'signature of before render: (chart, inFormKey,item, inField, inContainer)',
+			            x: 12,
+			            y: 390
+			        }],
+			        series: [{
+			            type: 'pie',
+			            angleField: 'data1',
+			            label: {
+			                field: 'wedge',
+			                calloutLine: {
+			                    length: 60,
+			                    width: 3
+			                    // specifying 'color' is also possible here
+			                }
+			            },
+			            highlight: true,
+			            tooltip: {
+			                trackMouse: true,
+			                renderer: 'onSeriesTooltipRender'
+			            }
+			        }]
+    		})]
+    });
+
+
+	//before render....
+	if(ijf.snippets.hasOwnProperty(inField["beforeRender"])) ijf.snippets[inField["beforeRender"]](layout, inFormKey,item, inField, inContainer);
+
+    layout.render(inContainer);
+    var thisControl = new itemControl(inFormKey+'_fld_'+inField.formCell, inField, item, layout, inContainer);
+    ijf.main.controlSet[thisControl.id]=thisControl;
+    //after render....
+    if(ijf.snippets.hasOwnProperty(inField["afterRender"])) ijf.snippets[inField["afterRender"]](layout, inFormKey,item, inField, inContainer);
 }
+,
+
+renderBarChart :function(inFormKey,item, inField, inContainer)
+{
+
+    inContainer.title = inField.toolTip;
+
+    var curIndex = 0;
+
+    var lCaption = inField.caption;
+
+    var rOnly = false;
+    if (inField.fieldStyle.indexOf('readonly:true')>-1)
+    {
+        rOnly=true;
+    }
+
+    var hideField = ijfUtils.renderIfShowField("",inField);
+
+    var collapsible = true;
+    if (inField.style.indexOf('collapsible:false')>-1)
+    {
+        collapsible=false;
+    }
+    var collapsed = false;
+    if (inField.style.indexOf('collapsed:true')>-1)
+    {
+        collapsed=true;
+    }
+
+
+	    var l_labelStyle = inField.labelStyle;
+	    var l_panelStyle = inField.panelStyle;
+	    var l_Style = inField.style;
+	    var l_fieldStyle = inField.fieldStyle;
+
+
+	    if(!l_labelStyle) l_labelStyle="background:transparent";
+	    if(!l_panelStyle) l_panelStyle="background:transparent";
+	    if(!l_Style) l_Style="background:transparent";
+	    if(!l_fieldStyle) l_fieldStyle="background:transparent";
+
+	var l_Height = 'auto';
+    var l_Height=ijfUtils.getNameValueFromStyleString(l_panelStyle,"height");
+    if(l_Height=="")
+    {
+		l_Height='auto';
+	}
+	else
+	{
+    	l_Height = l_Height.replace("px","")/1;
+	}
+
+
+    var store = Ext.create('Ext.data.Store', {
+    fields: ['category', 'value'],
+    data: [
+        { category: 'USA',     value:20},
+        { category: 'China',   value:30},
+        { category: 'Japan',   value:40},
+        { category: 'UK',      value:50}
+    ]
+	});
+
+    var layout = new Ext.Panel({
+        title: lCaption,
+        collapsible: false,
+        collapsed: false,
+        hidden: hideField,
+        width: "100%",
+        layoutConfig: {
+            columns: 1
+        },
+        style: l_Style,
+        controller:  Ext.create('Ext.app.ViewController', {
+
+				onAxisLabelRender: function (axis, label, layoutContext) {
+					return Ext.util.Format.number(layoutContext.renderer(label), '0,000');
+				},
+
+				onSeriesLabelRender: function (v) {
+					return Ext.util.Format.number(v, '0,000');
+				},
+
+				onItemEditTooltipRender: function (tooltip, item, target, e) {
+					var formatString = '0,000',
+						record = item.record;
+
+					tooltip.setHtml(record.get('category') + ': ' +
+						Ext.util.Format.number(target.yValue, formatString));
+				},
+
+				onSeriesTooltipRender: function(tooltip, record, item) {
+					var formatString = '0,000';
+
+					tooltip.setHtml(record.get('category') + ': ' +
+						Ext.util.Format.number(record.get('value'), formatString));
+				},
+
+				onColumnRender: function (v) {
+					return v;
+				}
+		}),
+          items: [Ext.create('Ext.chart.CartesianChart',{
+		        width: '100%',
+		        height: 500,
+		        insetPadding: 40,
+		        flipXY: false,
+		        interactions: {
+		            type: 'itemedit',
+		            style: {
+		                lineWidth: 2
+		            },
+		            tooltip: {
+		                renderer: 'onItemEditTooltipRender'
+		            }
+		        },
+		        animation: {
+		            easing: 'easeOut',
+		            duration: 500
+		        },
+		        store: store,
+		        axes: [{
+		            type: 'numeric',
+		            position: 'left',
+		            fields: 'value',
+		            grid: false,
+		            maximum: 100,
+		            majorTickSteps: 10,
+		            title: 'My Axis Title',
+		            renderer: 'onAxisLabelRender'
+		        }, {
+		            type: 'category',
+		            position: 'bottom',
+		            fields: 'category',
+		            grid: true
+		        }],
+		        series: [{
+		            type: 'bar',
+		            xField: 'category',
+		            yField: 'value',
+		            style: {
+		                minGapWidth: 10
+		            },
+		            highlightCfg: {
+		                strokeStyle: 'black',
+		                radius: 10
+		            },
+		            label: {
+		                field: 'value',
+		                display: 'insideEnd',
+		                renderer: 'onSeriesLabelRender'
+		            },
+		            tooltip: {
+		                trackMouse: true,
+		                renderer: 'onSeriesTooltipRender'
+		            }
+		        }],
+		        sprites: [{
+		            type: 'text',
+		            text: 'Title of My Bar Chart',
+		            fontSize: 22,
+		            width: 100,
+		            height: 30,
+		            x: 40, // the sprite x position
+		            y: 20  // the sprite y position
+		        }, {
+		            type: 'text',
+		            text: 'Use beforeRender to alter: signature(chart, inFormKey, item, inField, inContainer)',
+		            fontSize: 10,
+		            x: 12,
+		            y: 490
+		        }]
+		    })]
+
+    });
+
+
+	//before render....
+	if(ijf.snippets.hasOwnProperty(inField["beforeRender"])) ijf.snippets[inField["beforeRender"]](layout, inFormKey,item, inField, inContainer);
+
+    layout.render(inContainer);
+    var thisControl = new itemControl(inFormKey+'_fld_'+inField.formCell, inField, item, layout, inContainer);
+    ijf.main.controlSet[thisControl.id]=thisControl;
+    //after render....
+    if(ijf.snippets.hasOwnProperty(inField["afterRender"])) ijf.snippets[inField["afterRender"]](layout, inFormKey,item, inField, inContainer);
+}
+
 
 }
